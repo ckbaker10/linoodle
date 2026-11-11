@@ -29,3 +29,14 @@ cmake --build build/
 ```
 
 This will also build an executable which tests that the library works. Run it with `./build/testlinoodle`.
+
+## rearc local changes
+
+This copy is patched (see `crates/oodle-linoodle/patches/` and
+`SOURCE_PROVENANCE.json`). The upstream global `oo2core_8_win64.dll` loader is
+replaced by the handle-based, SHA-256-pinned C API in `linoodle.h`
+(`linoodle_open/identity/compress/decompress/close`). Only DLL identities in
+`linoodle_identities.inc` (generated from `oodle-identities.json`) load; every
+import must resolve to a shim. The upstream `OodleLZ_Compress` /
+`OodleLZ_Decompress` exports keep their signatures and forward to the open
+handle. No Oodle DLL is part of this tree.

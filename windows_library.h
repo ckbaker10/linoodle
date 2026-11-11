@@ -1,8 +1,22 @@
 #pragma once
 
 #include "windows_api.h"
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <set>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
+
+// Error raised by the loader; `code` is a linoodle_status value.
+class LoaderError : public std::runtime_error {
+public:
+    LoaderError(int code, const std::string& msg) : std::runtime_error(msg), m_code(code) {}
+    int code() const { return m_code; }
+private:
+    int m_code;
+};
 
 class MappedMemory {
 public:
@@ -23,22 +37,37 @@ private:
 
 typedef BOOL(WINAPI* tEntryPoint)(void* hinstDLL, DWORD fdwReason, void* lpReserved);
 
+// Import/export names as read from the PE tables. Imports are
+// "MODULE.DLL!function" with the module upper-cased.
+struct PeTables {
+    std::set<std::string> imports;
+    std::set<std::string> exports;
+};
+
 class WindowsLibrary {
 public:
     WindowsLibrary(MappedMemory&& mapping, std::unordered_map<std::string, void*>&& exports, tEntryPoint entryPoint);
     WindowsLibrary(const WindowsLibrary&) = delete;
-    WindowsLibrary(WindowsLibrary&& other);
+    WindowsLibrary(WindowsLibrary&& other) = delete;
     WindowsLibrary& operator=(const WindowsLibrary&) = delete;
     WindowsLibrary& operator=(WindowsLibrary&&) = delete;
     ~WindowsLibrary();
-    void* GetExport(const std::string& exportName);
+    // Returns nullptr when the export does not exist.
+    void* GetExport(const std::string& exportName) const;
     void* GetBaseAddress();
 
+    // Points gs at this thread's fake TEB. Must precede every call into the DLL.
     static void SetupCall();
-    static WindowsLibrary Load(const char* path);
+
+    // Reads the import/export tables of a PE image held in memory.
+    static PeTables ReadTables(const uint8_t* image, size_t size);
+
+    // Maps, relocates and links the PE image from `image` (the caller-owned,
+    // already hashed bytes) and runs DllMain(PROCESS_ATTACH). Every import
+    // must resolve to a shim; otherwise LoaderError(LINOODLE_E_UNRESOLVED_IMPORT).
+    static std::unique_ptr<WindowsLibrary> LoadFromMemory(const uint8_t* image, size_t size);
 private:
     MappedMemory m_mapping;
     std::unordered_map<std::string, void*> m_exports;
     tEntryPoint m_entryPoint;
-    static __thread TIB s_tib;
 };
