@@ -349,7 +349,7 @@ static const char* const k_id2_required_exports[] = {
     nullptr,
 };
 static const OodleIdentity k_identities[] = {
-    { "cca2c69cff3673c3d942fcafdf2b3c9cba889876f641d8139cbbb8b53612a66c", 639888ULL, "oo2core_9_win64.dll", "oo2core9-v1", "candidate", k_id0_imports, k_id0_exports, k_id0_required_exports },
-    { "e011172ed13b02150b12903748c0e7211a25612ad67be1d99e6407e409813282", 1128448ULL, "oo2core_9_win64.dll", "oo2core9-v1", "candidate", k_id1_imports, k_id1_exports, k_id1_required_exports },
-    { "019cafd2a2a955e4b12b34492162a9261053bef09c6cf3209a85b25a9952c613", 606208ULL, "oo2core_9_win64.dll", "oo2core9-v1", "candidate", k_id2_imports, k_id2_exports, k_id2_required_exports },
+    { "cca2c69cff3673c3d942fcafdf2b3c9cba889876f641d8139cbbb8b53612a66c", 639888ULL, "oo2core_9_win64.dll", "oo2core9-v1", "verified", k_id0_imports, k_id0_exports, k_id0_required_exports },
+    { "e011172ed13b02150b12903748c0e7211a25612ad67be1d99e6407e409813282", 1128448ULL, "oo2core_9_win64.dll", "oo2core9-v1", "verified", k_id1_imports, k_id1_exports, k_id1_required_exports },
+    { "019cafd2a2a955e4b12b34492162a9261053bef09c6cf3209a85b25a9952c613", 606208ULL, "oo2core_9_win64.dll", "oo2core9-v1", "verified", k_id2_imports, k_id2_exports, k_id2_required_exports },
 };
