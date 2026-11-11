@@ -124,6 +124,8 @@ private:
 typedef __attribute__((ms_abi)) size_t(*tDecompressFunc)(uint8_t* srcBuf, size_t srcLen, uint8_t* dstBuf, size_t dstLen, int64_t fuzz, int64_t crc, int64_t verbose, uint8_t* dstBase, size_t e, void* cb, void* cbCtx, void* scratch, size_t scratchSize, int64_t threadPhase);
 typedef __attribute__((ms_abi)) size_t(*tCompressFunc)(int64_t codec, uint8_t* srcBuf, size_t srcLen, uint8_t* dstBuf, int64_t level, void* opts, size_t offs, size_t unused, void* scratch, size_t scratchSize);
 
+typedef __attribute__((ms_abi)) const void*(*tGetDefaultFunc)(int32_t codec, int32_t level);
+
 constexpr size_t kMaxDllBytes = 64u << 20;
 constexpr size_t kMaxRequestBytes = size_t(1) << 31; // 2 GiB per call
 
@@ -133,6 +135,7 @@ struct Handle {
     std::unique_ptr<WindowsLibrary> lib;
     tCompressFunc compress = nullptr;
     tDecompressFunc decompress = nullptr;
+    tGetDefaultFunc getDefault = nullptr;
 };
 
 std::mutex g_openLock;
@@ -262,7 +265,8 @@ Handle* OpenImpl(const char* path, const char* expected)
     h->lib = WindowsLibrary::LoadFromMemory(bytes.data(), bytes.size());
     h->compress = reinterpret_cast<tCompressFunc>(h->lib->GetExport("OodleLZ_Compress"));
     h->decompress = reinterpret_cast<tDecompressFunc>(h->lib->GetExport("OodleLZ_Decompress"));
-    if (h->compress == nullptr || h->decompress == nullptr) {
+    h->getDefault = reinterpret_cast<tGetDefaultFunc>(h->lib->GetExport("OodleLZ_CompressOptions_GetDefault"));
+    if (h->compress == nullptr || h->decompress == nullptr || h->getDefault == nullptr) {
         throw LoaderError(LINOODLE_E_IDENTITY_MISMATCH, "identity " + idName + ": OodleLZ exports not resolvable");
     }
     return h.release();
@@ -343,6 +347,102 @@ extern "C" intptr_t linoodle_compress(void* h, int32_t compressor, int32_t level
         return -2;
     }
     memcpy(dst, scratch.data(), n);
+    return static_cast<intptr_t>(n);
+}
+
+namespace {
+
+// Validates and applies overrides to `block`. Returns false on any violation.
+bool ApplyOverrides(uint8_t* block, const linoodle_compress_overrides* ov)
+{
+    if (ov == nullptr) {
+        return true;
+    }
+    if (ov->count > LINOODLE_MAX_OVERRIDES) {
+        return false;
+    }
+    bool used[LINOODLE_OPTIONS_BLOCK_LEN] = {};
+    for (uint32_t i = 0; i < ov->count; i++) {
+        const linoodle_override& o = ov->entries[i];
+        if (o.size != 1 && o.size != 2 && o.size != 4 && o.size != 8) {
+            return false;
+        }
+        if (o.offset % o.size != 0 || o.offset > LINOODLE_OPTIONS_BLOCK_LEN ||
+            o.size > LINOODLE_OPTIONS_BLOCK_LEN - o.offset) {
+            return false;
+        }
+        if (o.size < 8 && (o.value >> (8 * o.size)) != 0) {
+            return false;
+        }
+        for (uint32_t b = 0; b < o.size; b++) {
+            if (used[o.offset + b]) {
+                return false;
+            }
+            used[o.offset + b] = true;
+        }
+    }
+    for (uint32_t i = 0; i < ov->count; i++) {
+        const linoodle_override& o = ov->entries[i];
+        for (uint32_t b = 0; b < o.size; b++) {
+            block[o.offset + b] = static_cast<uint8_t>(o.value >> (8 * b));
+        }
+    }
+    return true;
+}
+
+} // namespace
+
+extern "C" int linoodle_get_default_options(void* h, int32_t compressor, int32_t level, uint8_t out[LINOODLE_OPTIONS_BLOCK_LEN])
+{
+    Handle* hd = AsHandle(h);
+    if (hd == nullptr || out == nullptr) {
+        return -1;
+    }
+    WindowsLibrary::SetupCall();
+    const void* p = hd->getDefault(compressor, level);
+    if (p == nullptr) {
+        return -4;
+    }
+    memcpy(out, p, LINOODLE_OPTIONS_BLOCK_LEN);
+    return 0;
+}
+
+extern "C" intptr_t linoodle_compress_ex(void* h, int32_t compressor, int32_t level, const uint8_t* src, size_t src_len, uint8_t* dst, size_t dst_cap, const linoodle_compress_overrides* ov, size_t scratch_size)
+{
+    Handle* hd = AsHandle(h);
+    if (hd == nullptr || (src == nullptr && src_len != 0) || dst == nullptr || src_len == 0 || src_len > kMaxRequestBytes) {
+        return -1;
+    }
+    if (scratch_size > LINOODLE_MAX_SCRATCH) {
+        return -6;
+    }
+    uint8_t opts[LINOODLE_OPTIONS_BLOCK_LEN];
+    int rc = linoodle_get_default_options(h, compressor, level, opts);
+    if (rc != 0) {
+        return rc;
+    }
+    if (!ApplyOverrides(opts, ov)) {
+        return -5;
+    }
+    std::vector<uint8_t> out;
+    std::vector<uint8_t> scratch;
+    try {
+        out.resize(CompressScratchBound(src_len));
+        scratch.resize(scratch_size);
+    }
+    catch (...) {
+        return -3;
+    }
+    WindowsLibrary::SetupCall();
+    size_t n = hd->compress(compressor, const_cast<uint8_t*>(src), src_len, out.data(), level, opts, 0, 0,
+                            scratch_size != 0 ? scratch.data() : nullptr, scratch_size);
+    if (n == 0 || n > out.size()) {
+        return n == 0 ? 0 : -1;
+    }
+    if (n > dst_cap) {
+        return -2;
+    }
+    memcpy(dst, out.data(), n);
     return static_cast<intptr_t>(n);
 }
 

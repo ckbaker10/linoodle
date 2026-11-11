@@ -101,6 +101,7 @@ static const char* const k_id0_exports[] = {
 };
 static const char* const k_id0_required_exports[] = {
     "OodleLZ_Compress",
+    "OodleLZ_CompressOptions_GetDefault",
     "OodleLZ_Decompress",
     nullptr,
 };
@@ -240,6 +241,7 @@ static const char* const k_id1_exports[] = {
 };
 static const char* const k_id1_required_exports[] = {
     "OodleLZ_Compress",
+    "OodleLZ_CompressOptions_GetDefault",
     "OodleLZ_Decompress",
     nullptr,
 };
@@ -342,6 +344,7 @@ static const char* const k_id2_exports[] = {
 };
 static const char* const k_id2_required_exports[] = {
     "OodleLZ_Compress",
+    "OodleLZ_CompressOptions_GetDefault",
     "OodleLZ_Decompress",
     nullptr,
 };

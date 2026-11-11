@@ -37,6 +37,43 @@ int linoodle_identity(void* h, char sha256_hex_out[65]);
 intptr_t linoodle_compress(void* h, int32_t compressor, int32_t level, const uint8_t* src,
                            size_t src_len, uint8_t* dst, size_t dst_cap);
 
+/* ---- rearc patch 0003: XTool-style compression with a modified default
+ * options block. No Oodle struct field names are assumed: the options are an
+ * opaque LINOODLE_OPTIONS_BLOCK_LEN-byte block obtained from the DLL's own
+ * OodleLZ_CompressOptions_GetDefault(compressor, level) and modified only at
+ * explicit byte offsets. */
+#define LINOODLE_OPTIONS_BLOCK_LEN 0x58u
+#define LINOODLE_MAX_OVERRIDES 8u
+#define LINOODLE_MAX_SCRATCH ((size_t)256 << 20)
+
+/* Writes `size` (1, 2, 4 or 8) little-endian bytes of `value` at byte
+ * `offset` of the block. offset must be a multiple of size and
+ * offset + size <= LINOODLE_OPTIONS_BLOCK_LEN; `value` must fit into size. */
+typedef struct linoodle_override {
+    uint32_t offset;
+    uint32_t size;
+    uint64_t value;
+} linoodle_override;
+
+typedef struct linoodle_compress_overrides {
+    uint32_t count;                                   /* <= LINOODLE_MAX_OVERRIDES */
+    linoodle_override entries[LINOODLE_MAX_OVERRIDES]; /* ranges must not overlap */
+} linoodle_compress_overrides;
+
+/* Copies the LINOODLE_OPTIONS_BLOCK_LEN bytes returned by
+ * OodleLZ_CompressOptions_GetDefault(compressor, level) into `out`.
+ * 0 = ok, -1 = bad argument/handle, -4 = GetDefault returned NULL. */
+int linoodle_get_default_options(void* h, int32_t compressor, int32_t level,
+                                 uint8_t out[LINOODLE_OPTIONS_BLOCK_LEN]);
+
+/* Like linoodle_compress, but passes a copy of the GetDefault block (with
+ * `ov` applied; NULL = unmodified) as the options pointer and a caller-sized
+ * scratch buffer (0 = NULL scratch; <= LINOODLE_MAX_SCRATCH). Return values as
+ * linoodle_compress; -5 = invalid overrides, -6 = scratch too large. */
+intptr_t linoodle_compress_ex(void* h, int32_t compressor, int32_t level, const uint8_t* src,
+                              size_t src_len, uint8_t* dst, size_t dst_cap,
+                              const linoodle_compress_overrides* ov, size_t scratch_size);
+
 /* Decompresses exactly dst_len bytes with OodleLZ_Decompress (fuzz-safe,
  * no CRC check, unthreaded). Returns the decoded size (== dst_len) or < 0. */
 intptr_t linoodle_decompress(void* h, const uint8_t* src, size_t src_len, uint8_t* dst,
